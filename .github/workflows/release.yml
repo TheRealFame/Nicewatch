@@ -1,0 +1,65 @@
+name: Build & Release Nicewatch
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Tauri v2 Linux build deps + rpm (the daemon's RPM bundle is built by
+      # the tauri bundler, but CI keeps the toolchain parity with releases).
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libfuse2 rpm
+
+      - name: Install NPM Dependencies
+        working-directory: gui
+        run: npm ci
+
+      # The daemon is a separate workspace crate: build it explicitly (the
+      # tauri bundler only compiles the GUI crate) and stage the
+      # triple-suffixed copy the bundle expects.
+      - name: Build Daemon
+        run: cargo build --release -p nicewatch-daemon
+
+      - name: Stage Daemon Binary
+        run: cp target/release/nicewatch target/release/nicewatch-x86_64-unknown-linux-gnu
+
+      - name: Build Bundles (AppImage + deb + rpm)
+        working-directory: gui
+        run: npm run tauri -- build --bundles appimage,deb,rpm
+
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for file in target/release/bundle/appimage/*.AppImage \
+                      target/release/bundle/deb/*.deb \
+                      target/release/bundle/rpm/*.rpm; do
+            if [ -f "$file" ]; then
+              echo "Uploading $file..."
+              gh release upload "${{ github.ref_name }}" "$file" --clobber || true
+            fi
+          done

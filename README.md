@@ -13,6 +13,12 @@ and control it live.
 > warranty of any kind is provided. Prefer testing on a machine you can
 > afford to reboot.
 
+## Screenshot
+
+<div align="center">
+  <img src="assets/Dashboard.png" alt="Nicewatch dashboard" width="90%">
+</div>
+
 ```
 ┌─────────────┐   rules.toml (system + local)   ┌──────────────┐
 │   GUI app   │ ◄──────────────────────────────►│    daemon    │
