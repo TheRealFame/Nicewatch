@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The title is set at runtime from the app-name constant served by the
+         Rust backend (see src/main.ts); the window chrome title comes from
+         the same constant on the Rust side. -->
+    <title></title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+    </style>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

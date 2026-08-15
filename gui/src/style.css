@@ -1,0 +1,270 @@
+/* Dark-by-default fallback palette.  On Linux the real colors are fetched
+   from the OS (KDE/GTK/bare via get_native_theme, see lib/theme.ts) and
+   override these variables at runtime; this file only guarantees a sane
+   look before that completes or when it can't (e.g. plain browser tabs). */
+:root {
+  --bg: #1e1e22;
+  --bg-alt: #242428;
+  --bg-raised: #2b2b30;
+  --card: #313136;
+  --border: #3d3d44;
+  --border-strong: #4a4a52;
+  --text: #f2f2f4;
+  --text-dim: #9b9ba3;
+  --text-faint: #73737c;
+  --accent: #3584e4;
+  --accent-soft: rgba(53, 132, 228, 0.16);
+  --accent-border: rgba(53, 132, 228, 0.45);
+  --accent-hover: #3d8ff0;
+  --green: #2ec27e;
+  --green-soft: rgba(46, 194, 126, 0.16);
+  --amber: #d9a03c;
+  --warn: #e34d5b;
+  --warn-soft: rgba(227, 77, 91, 0.14);
+  --purple: #9141ac;
+  --purple-soft: rgba(145, 65, 172, 0.16);
+  --orange: #e66100;
+  --orange-soft: rgba(230, 97, 0, 0.16);
+  /* One shadow language: single top-light source, layered. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.18);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.32), 0 10px 24px rgba(0, 0, 0, 0.24);
+  /* One corner personality: 6/8/12 scale.  Pills stay full-round — badge
+     capsules are a distinct component, not a mixed radius. */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --tbar-h: 38px;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  user-select: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  /* Native UI font (Noto on KDE, Cantarell on GNOME, San Francisco on
+     macOS…): the app should look like the desktop, not like a web page. */
+  font-family: system-ui, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-alt);
+}
+
+button:active {
+  background: var(--card);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button.flat {
+  background: none;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+button.flat:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+button.icon-btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+button.icon-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+input,
+select {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font: inherit;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+select:disabled {
+  opacity: 0.55;
+}
+
+/* ---- Pill / badge helpers ---- */
+.pill {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2.5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.pill.ok {
+  color: var(--green);
+  border-color: rgba(46, 194, 126, 0.45);
+  background: var(--green-soft);
+}
+
+.pill.down {
+  color: var(--warn);
+  border-color: rgba(227, 77, 91, 0.45);
+  background: var(--warn-soft);
+}
+
+.pill.btn {
+  cursor: pointer;
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.pill.btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.pill.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.pill.detail {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Warning banner (daemon operational warnings) ---- */
+.warn-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(227, 77, 91, 0.5);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.warn-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.warn-x {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--warn);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.warn-x:hover {
+  background: rgba(227, 77, 91, 0.18);
+}
+
+/* ---- Tier tinting (pills, selects, bars): shared by App + ProcessTable ---- */
+.tier-none {
+  color: var(--text-dim);
+}
+.tier-software {
+  color: var(--text-dim);
+  border-color: var(--border-strong);
+}
+.tier-game {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.tier-streaming {
+  color: var(--purple);
+  border-color: rgba(145, 65, 172, 0.5);
+  background: var(--purple-soft);
+}
+.tier-realtime {
+  color: var(--orange);
+  border-color: rgba(230, 97, 0, 0.5);
+  background: var(--orange-soft);
+}
+
+/* Filled dots inside the custom tier dropdown. */
+.td-dot.tier-none {
+  background: var(--border-strong);
+}
+.td-dot.tier-software {
+  background: var(--text-dim);
+}
+.td-dot.tier-game {
+  background: var(--accent);
+}
+.td-dot.tier-streaming {
+  background: var(--purple);
+}
+.td-dot.tier-realtime {
+  background: var(--orange);
+}

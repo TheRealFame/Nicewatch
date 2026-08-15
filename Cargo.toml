@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["common", "daemon", "gui/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Automatic CPU/IO scheduling priority daemon with a Tauri GUI"
+
+[profile.release]
+lto = true
+codegen-units = 1

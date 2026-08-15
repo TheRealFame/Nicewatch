@@ -1,0 +1,36 @@
+# Nicewatch daemon systemd unit (template).
+#
+# Install:
+#   sudo cp nicewatch.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now nicewatch
+#
+# The daemon re-sets priority of processes owned by OTHER users (that is its
+# job), so it runs as root.  It never asks for permissions: it applies the
+# tiers from the rules file and only GETS priority (nice/ionice/cgroup), it
+# never raises one above what the config allows.
+#   - Realtime tier in this project uses nice -12, NOT SCHED_FIFO/RR.
+#   - All changes are reverted on exit (signal handler resets owned pids).
+[Unit]
+Description=Nicewatch priority daemon (auto nice/ionice per process rules)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nicewatch \
+    --root-config /etc/proc-priority-daemon/rules.toml \
+    --local-config %h/.config/proc-priority-daemon/rules.toml \
+    --socket %t/nicewatch.sock
+Restart=on-failure
+RestartSec=2
+# TODO: drop capabilities over time.  SYS_NICE is enough for setpriority on
+# foreign pids; the ioprio call goes through /proc/self/ioprio via syscall.
+# CapabilityBoundingSet=CAP_SYS_NICE
+# AmbientCapabilities=CAP_SYS_NICE
+# NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/proc-priority-daemon %h/.config/proc-priority-daemon
+# MemoryLimit=None
+
+[Install]
+WantedBy=multi-user.target

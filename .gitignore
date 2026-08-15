@@ -1,0 +1,23 @@
+# Rust / Cargo
+target/
+Cargo.lock.bak
+
+# Node / Tauri frontend
+node_modules/
+gui/dist/
+
+# Build deliverables (attached to GitHub releases instead)
+*.AppImage
+
+# Local config / personal data
+.env
+*.log
+*.bak
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Testing scratch
+/tmp/

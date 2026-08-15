@@ -1,0 +1,81 @@
+# Example Nicewatch rules file.
+#
+# Copy to either:
+#   /etc/proc-priority-daemon/rules.toml   (authoritative, read by the daemon)
+#   ~/.config/proc-priority-daemon/rules.toml   (local staging area; the daemon
+#       applies it in memory and promotes it to the system file after the
+#       change has been stable for --promote-debounce-ms, default 30 s)
+#
+# Load order cache -> local -> system; if both exist, the one with the newer
+# mtime wins, so /etc normally takes precedence.
+
+# How often the daemon rescans /proc (ms). Minimum is 250.
+poll_interval_ms = 1000
+
+# Wipe the "software" baseline: this is the default tier for anything not
+# matched below, so you do not normally need to write rules for browsers etc.
+# Rules here are explicit pins that always win over the game-detection
+# heuristic.  The rule name (table key) is used to match /proc/<pid>/comm.
+
+[rules.firefox]
+match = "firefox"
+tier = "software"
+
+[rules.vnyan]
+# Pinned explicitly to the software tier: the game-detection heuristic flags
+# processes with Steam/DRI/DRM fingerprints, which VNyan falsely matches if it
+# is started from a Steam prefix.  Explicit rules always take precedence.
+match = "VNyan"   # comm is case-sensitive
+tier = "software"
+# Optional per-rule overrides instead of `tier`:
+# nice = 0
+# ionice_class = "best-effort"
+# ionice_priority = 4
+# Only apply after the process has lived this long (s):
+# delay = 10
+
+[rules.cs2]
+match = "cs2"
+tier = "game"
+
+[rules.streamdeck]
+match = "obs"
+tier = "streaming"
+
+# Preset applied to anything the game-detection heuristic flags that has no
+# explicit rule above.  Defaults to the game preset when this section is
+# absent.  (Confirmation-window answers persist rules here too.)
+[auto_game_default]
+tier = "game"
+# nice = -8
+# ionice_class = "best-effort"
+# ionice_priority = 2
+
+# Optional cgroup v2 limits carried with a rule (created on first apply):
+# [rules.biggame.cgroup]
+# path = "/sys/fs/cgroup/nicewatch/biggame"
+# cpu_weight = 200        # 1..=10000 for cgroup v2
+# cpu_cap_percent = 50    # hard cap: percent of ONE core (100 = a full core);
+#                         # implemented as cgroup v2 `cpu.max`.  This is the
+#                         # only setting that actually throttles CPU usage
+#                         # (nice alone only affects scheduling priority).
+#                         # The GUI's Cap % column edits this (1..=3200).
+# cpu_idle = true         # cgroup v2 `cpu.idle`: when true the group's tasks
+#                         # only run when NO other (non-idle) task is runnable
+#                         # — a stronger deprioritization than a low
+#                         # `cpu_weight`.  Ideal for pure background apps
+#                         # (Discord, sync daemons, AI tooling).  Note: when
+#                         # idle is true the kernel rejects cpu.weight writes
+#                         # (the weight is pinned to the minimum), so the
+#                         # daemon skips it; keep cpu_weight anyway for when
+#                         # idle is turned back off.
+# memory_high = "4G"      # soft memory ceiling for the group: above this the
+#                         # kernel aggressively reclaims the group's inactive
+#                         # pages (to zram/swap).  Set it comfortably ABOVE the
+#                         # app's live working set — too low thrashes an
+#                         # actively-used window (e.g. a video tab).
+# memory_max = "6G"       # HARD memory ceiling (`memory.max`): the kernel
+#                         # reclaims and, if needed, OOM-kills processes in the
+#                         # group rather than ever letting it exceed this.
+#                         # Use for strict caps (a browser tab set, an AI
+#                         # process); beware it can kill the app outright.
