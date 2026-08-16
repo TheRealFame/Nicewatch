@@ -75,6 +75,10 @@ pub struct CgroupManager {
     enrolled: HashMap<u32, Enrolled>,
     created_dirs: HashSet<PathBuf>,
     warned: HashSet<String>,
+    /// Set when the base's controller set had to be re-asserted (systemd
+    /// dropped `cpu` and the kernel reset every child's cpu.weight back to
+    /// 100).  Makes the next reconcile rewrite all limits once.
+    controllers_reasserted: bool,
     /// JSON file mirroring `enrolled`, so a SIGKILLed daemon's orphans can
     /// be repatriated by the next run.
     state_path: Option<PathBuf>,
@@ -100,6 +104,7 @@ impl CgroupManager {
             enrolled: HashMap::new(),
             created_dirs: HashSet::new(),
             warned: HashSet::new(),
+            controllers_reasserted: false,
             state_path: Some(nicewatch_common::runtime_dir().join("nicewatch-cgroups.json")),
         };
         m.recover_orphans();
@@ -121,6 +126,10 @@ impl CgroupManager {
     pub fn ensure_controllers(&mut self) {
         let Some(base) = &self.base else { return };
         let path = base.join("cgroup.subtree_control");
+        let had_cpu = std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .split_whitespace()
+            .any(|c| c == "cpu");
         if let Err(e) = std::fs::write(&path, "+cpu +memory +pids") {
             let key = format!("subtree:{path:?}");
             if self.warned.insert(key) {
@@ -130,7 +139,21 @@ impl CgroupManager {
                     path.display()
                 );
             }
+            return;
         }
+        if !had_cpu {
+            // systemd dropped `cpu` and the kernel reset every child's
+            // cpu.weight (and other controller state) back to the defaults;
+            // the daemon only rewrites limits on *change*, so nothing would
+            // restore them.  Force a full rewrite on the next reconcile.
+            self.controllers_reasserted = true;
+        }
+    }
+
+    /// The reconcile has finished rewriting every managed dir after a
+    /// controller re-assertion — subsequent polls can diff normally again.
+    pub fn clear_controllers_reasserted(&mut self) {
+        self.controllers_reasserted = false;
     }
 
     /// Move any pids our previous run left behind back to their origin
@@ -258,8 +281,10 @@ impl CgroupManager {
                 let already = self.enrolled.get(&pid);
                 if let Some(en) = already {
                     if en.dir == dir {
-                        // Same target: only rewrite when limits changed.
-                        if en.limits != Some(lims.clone()) {
+                        // Same target: only rewrite when limits changed — or
+                        // after a controller re-assertion reset them (kernel
+                        // default weights) while we weren't looking.
+                        if en.limits != Some(lims.clone()) || self.controllers_reasserted {
                             if let Err(msg) = apply_limits(&dir, lims) {
                                 self.warn_once(pid, &msg);
                             }
@@ -838,6 +863,7 @@ mod tests {
             enrolled: HashMap::new(),
             created_dirs: HashSet::new(),
             warned: HashSet::new(),
+            controllers_reasserted: false,
             state_path: None,
         };
         let lims = CgroupLimits {
@@ -876,6 +902,54 @@ mod tests {
     }
 
     #[test]
+    fn controller_reassertion_forces_limit_rewrite() {
+        // When systemd drops `cpu` from the base's subtree_control and the
+        // daemon re-enables it, the kernel resets every child's cpu.weight
+        // to the default (100).  The daemon only rewrites limits on *change*,
+        // so the reassertion flag must force a rewrite of an unchanged rule.
+        let td = tempfile::TempDir::new().unwrap();
+        let mut m = CgroupManager {
+            base: Some(td.path().to_path_buf()),
+            enrolled: HashMap::new(),
+            created_dirs: HashSet::new(),
+            warned: HashSet::new(),
+            controllers_reasserted: false,
+            state_path: None,
+        };
+        let lims = CgroupLimits {
+            path: None,
+            cpu_weight: Some(300),
+            cpu_cap_percent: None,
+            memory_high: None,
+            memory_max: None,
+            cpu_idle: None,
+        };
+        m.sync_pid(std::process::id(), "chrome", Some(&lims));
+        let dir = td.path().join("nw-chrome");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("cpu.weight")).unwrap(),
+            "300"
+        );
+        // Kernel-side reset (as if the controller was re-enabled).
+        std::fs::write(dir.join("cpu.weight"), "100").unwrap();
+        // Without the flag, an unchanged rule would not be rewritten...
+        m.sync_pid(std::process::id(), "chrome", Some(&lims));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("cpu.weight")).unwrap(),
+            "100"
+        );
+        // ...and with it, the next reconcile restores the configured weight.
+        m.controllers_reasserted = true;
+        m.sync_pid(std::process::id(), "chrome", Some(&lims));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("cpu.weight")).unwrap(),
+            "300"
+        );
+        m.clear_controllers_reasserted();
+        m.shutdown();
+    }
+
+    #[test]
     fn manager_auto_creates_dir_from_rule_name() {
         let td = tempfile::TempDir::new().unwrap();
         let mut m = CgroupManager {
@@ -883,6 +957,7 @@ mod tests {
             enrolled: HashMap::new(),
             created_dirs: HashSet::new(),
             warned: HashSet::new(),
+            controllers_reasserted: false,
             state_path: None,
         };
         let lims = CgroupLimits {
@@ -917,6 +992,7 @@ mod tests {
             enrolled: HashMap::new(),
             created_dirs: HashSet::new(),
             warned: HashSet::new(),
+            controllers_reasserted: false,
             state_path: None,
         };
         let lims = CgroupLimits {

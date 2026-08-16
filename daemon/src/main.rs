@@ -460,6 +460,9 @@ fn run(args: &Args) -> Result<(), String> {
             // remnants between the last state persist and a SIGKILL, or pids
             // stranded when systemd rebuilt the session slices).
             cgroups.sweep_strays();
+            // Controller re-assertion rewrote every managed dir above; the
+            // next poll can diff limits normally again.
+            cgroups.clear_controllers_reasserted();
 
             // Refresh the system CPU/mem picture first so the diff below can
             // carry it; skip the first two samples (startup workload is not
