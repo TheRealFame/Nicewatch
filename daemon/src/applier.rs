@@ -505,11 +505,18 @@ fn proc_cgroup_of(pid: u32) -> Option<String> {
 
 /// Find a writable base directory for managed cgroups.
 ///
-/// Walk down from the cgroup root toward the daemon's own cgroup and return
-/// the first directory we can actually create a child in.  For a user daemon
-/// that lands on the user's delegated session subtree (`user@<uid>.service`);
-/// for a root daemon it lands wherever the daemon's unit lives (writable by
-/// root).  We don't go *above* the cgroup root.
+/// Walk up from the daemon's own cgroup and return the first directory we
+/// can actually create a child in.  For a user daemon that is the daemon's
+/// enclosing slice (`app.slice`); for a root daemon it lands wherever the
+/// daemon's unit lives (writable by root).
+///
+/// Boundaries are forbidden as bases: the user session root
+/// (`user@<uid>.service`), its slices, and `session.slice`.  Managed dirs
+/// created there would be *siblings* of the session's own slices and, with
+/// their cpu weights (up to 1000), would starve the interactive session
+/// (audio stack included) out of the CPU share under contention — the
+/// daemon's budget must compete inside `app.slice`, never against
+/// `session.slice`.
 fn discover_cgroup_base() -> Option<PathBuf> {
     // Fast path: try to create a probe dir under the daemon's own cgroup.
     let mut own = PathBuf::from(CGROUP_ROOT);
@@ -529,21 +536,73 @@ fn discover_cgroup_base() -> Option<PathBuf> {
             break;
         }
     }
-    for cand in candidates {
-        if cand == PathBuf::from(CGROUP_ROOT) {
-            break; // never write directly under the root
+    // A write failure on the daemon's OWN cgroup is expected: systemd unit
+    // cgroups have empty subtree_control, so their children expose no
+    // controller files at all — walk up.  A failing candidate above that is
+    // just transient (systemd re-computes slice subtree_control on unit
+    // churn and can drop `cpu`), so retry the whole walk a few times before
+    // giving up — the walk stops at the first forbidden boundary, never
+    // inside one.  The probe writes `memory.high` rather than `cpu.max`:
+    // memory is delegated to the session unconditionally, so the probe
+    // tests writability, not the current (changing) controller set; the
+    // controllers themselves are asserted by `ensure_controllers` right
+    // after discovery.
+    for _ in 0..3 {
+        for (i, cand) in candidates.iter().enumerate() {
+            if is_forbidden_base(cand) {
+                return None; // managed dirs must never sit beside the slices
+            }
+            let mut probed = false;
+            for _ in 0..5 {
+                let probe = cand.join(format!(".nw-probe-{}", std::process::id()));
+                if std::fs::create_dir(&probe).is_err() {
+                    break; // leaf cgroup with processes — walk up
+                }
+                let ok = std::fs::write(probe.join("memory.high"), "max").is_ok();
+                let _ = std::fs::remove_dir(&probe);
+                if ok {
+                    return Some(cand.clone());
+                }
+                probed = true;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            if !probed {
+                // create_dir itself failed; this candidate hosts processes
+                // (leaf) or is unwritable — either way, keep walking up.
+                continue;
+            }
+            if i == 0 {
+                // The daemon's own cgroup: systemd unit cgroups carry no
+                // controllers, so child dirs expose no controller files by
+                // design.  Expected — walk up to the enclosing slice.
+                continue;
+            }
+            // A higher candidate exists but won't take any write — do not
+            // walk further up into a boundary; limiting just stays off.
+            break;
         }
-        let probe = cand.join(format!(".nw-probe-{}", std::process::id()));
-        if std::fs::create_dir(&probe).is_err() {
-            continue;
-        }
-        let ok = std::fs::write(probe.join("cpu.max"), "max 100000").is_ok();
-        let _ = std::fs::remove_dir(&probe);
-        if ok {
-            return Some(cand);
-        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
     }
     None
+}
+
+/// The managed-subtree base must never be a session boundary: cgroups whose
+/// children are *slices* (or the cgroup root itself).  Managed dirs created
+/// there would compete directly against the session's slices for CPU shares.
+fn is_forbidden_base(cand: &std::path::Path) -> bool {
+    let Some(name) = cand.file_name().and_then(|n| n.to_str()) else {
+        return true; // the filesystem root — never write there
+    };
+    if name == "session.slice" || name == "user.slice" {
+        return true;
+    }
+    if name.starts_with("user@") && name.ends_with(".service") {
+        return true;
+    }
+    if name.starts_with("user-") && name.ends_with(".slice") {
+        return true;
+    }
+    cand == std::path::Path::new(CGROUP_ROOT)
 }
 
 /// Rule name -> filesystem-safe cgroup dir name.
@@ -722,6 +781,32 @@ mod tests {
         assert!(!is_rt_scheduled(std::process::id()));
         // A dead pid must not panic.
         assert!(!is_rt_scheduled(999_999_999));
+    }
+
+    #[test]
+    fn session_boundaries_are_forbidden_bases() {
+        // Managed dirs must never be siblings of the session's slices: that
+        // would let our cpu weights starve the interactive session (audio
+        // stack included) out of the CPU share under contention.
+        assert!(is_forbidden_base(std::path::Path::new("/sys/fs/cgroup")));
+        assert!(is_forbidden_base(std::path::Path::new(
+            "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service"
+        )));
+        assert!(is_forbidden_base(std::path::Path::new(
+            "/sys/fs/cgroup/user.slice/user-1000.slice"
+        )));
+        assert!(is_forbidden_base(std::path::Path::new(
+            "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/session.slice"
+        )));
+        assert!(is_forbidden_base(std::path::Path::new("/sys/fs/cgroup/user.slice")));
+        // Legitimate bases stay allowed: the daemon's enclosing slice.
+        assert!(!is_forbidden_base(std::path::Path::new(
+            "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice"
+        )));
+        assert!(!is_forbidden_base(std::path::Path::new(
+            "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/nicewatch.service"
+        )));
+        assert!(!is_forbidden_base(std::path::Path::new("/sys/fs/cgroup/system.slice")));
     }
 
     #[test]
