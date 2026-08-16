@@ -128,7 +128,7 @@ nicewatch [--root-config PATH] [--local-config PATH] [--socket PATH]
 cargo test -p nicewatch-common -p nicewatch-daemon
 ```
 
-69 tests cover section parsing, rules/preset resolution, sync precedence
+71 tests cover section parsing, rules/preset resolution, sync precedence
 (newer-local wins, promote on settle, self-write mtime tolerance, EPERM
 fallback), CPU% accounting, and the IPC wire format.
 
