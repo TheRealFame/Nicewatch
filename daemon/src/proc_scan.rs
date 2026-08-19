@@ -377,6 +377,37 @@ fn parse_meminfo_kb(rest: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// True when any AMD GPU is pinned to its lowest power state
+/// (`power_dpm_force_performance_level` == "low"), which throttles games
+/// to minimum clocks.  Read-only; the daemon never writes GPU state.
+pub fn gpu_perf_level_low(root: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        // Match only the card nodes themselves (`card0`, `card1`, …) and
+        // not the connector symlinks (`card0-DP-1`) or render nodes.
+        if !name.starts_with("card") {
+            continue;
+        }
+        if !name["card".len()..].bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(level) =
+            fs::read_to_string(entry.path().join("device/power_dpm_force_performance_level"))
+        else {
+            continue;
+        };
+        if level.trim() == "low" {
+            return true;
+        }
+    }
+    false
+}
+
 #[test]
 fn comm_of_our_own_process() {
     let comm = comm_of(std::process::id()).expect("own pid readable");
@@ -510,5 +541,25 @@ mod tests {
     #[test]
     fn uid_fallback_is_numeric() {
         assert_eq!(uid_to_user(u32::MAX), u32::MAX.to_string());
+    }
+
+    #[test]
+    fn gpu_perf_level_low_detects_low_and_ignores_others() {
+        let root = fixture_proc_dir("gpulevel");
+        let card = root.join("card1/device");
+        fs::create_dir_all(&card).unwrap();
+        // No GPU dirs at all -> false.
+        assert!(!gpu_perf_level_low(&root));
+        // High level -> false.
+        fs::write(card.join("power_dpm_force_performance_level"), "high\n").unwrap();
+        assert!(!gpu_perf_level_low(&root));
+        // Low level -> true.
+        fs::write(card.join("power_dpm_force_performance_level"), "low\n").unwrap();
+        assert!(gpu_perf_level_low(&root));
+        // A second healthy card does not mask the low one.
+        let card0 = root.join("card0/device");
+        fs::create_dir_all(&card0).unwrap();
+        fs::write(card0.join("power_dpm_force_performance_level"), "auto\n").unwrap();
+        assert!(gpu_perf_level_low(&root));
     }
 }

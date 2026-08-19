@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn truncate_keeps_short_and_ellipsizes_long() {
         assert_eq!(truncate("firefox", 18), "firefox");
-        assert_eq!(truncate("DELTARUNE.exe_very_long", 10), "DELTARUNE…");
+        assert_eq!(truncate("SampleGame.exe_very_long", 10), "SampleGam…");
         assert_eq!(truncate("x", 1), "x");
     }
 }

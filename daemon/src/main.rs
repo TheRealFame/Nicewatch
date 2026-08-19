@@ -247,6 +247,9 @@ fn run(args: &Args) -> Result<(), String> {
     let mut system_cpu_samples = 0u32;
     // (total, used) KiB from /proc/meminfo, refreshed every poll.
     let mut system_mem = (0u64, 0u64);
+    // Edge-triggered GPU power notice: warn once per "low" episode so a
+    // misbehaving power daemon cannot nag every poll.
+    let mut gpu_low_prev = false;
 
     let ncpu = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
     let our_pid = std::process::id();
@@ -314,6 +317,19 @@ fn run(args: &Args) -> Result<(), String> {
             // Self-heal the base's controller delegation (systemd can drop
             // `cpu` from the session slices' subtree_control on rebuilds).
             cgroups.ensure_controllers();
+            // One-shot notice when the GPU is pinned to its lowest power
+            // state (power-profiles-daemon or a stray write can do this;
+            // games then run at minimum clocks).
+            let gpu_low_now =
+                proc_scan::gpu_perf_level_low(std::path::Path::new("/sys/class/drm"));
+            if gpu_low_now && !gpu_low_prev {
+                let msg = "GPU performance level is \"low\" — games may run at reduced clocks. \
+                           Write \"high\" to /sys/class/drm/card*/device/power_dpm_force_performance_level \
+                           (or disable power-profiles-daemon) to unlock full clocks.";
+                ipc.broadcast(&ServerMsg::Warn { msg: msg.to_string() });
+                warn!("{msg}");
+            }
+            gpu_low_prev = gpu_low_now;
             let btime = proc_scan::read_btime(std::path::Path::new("/proc"));
             let entries = proc_scan::scan_proc(std::path::Path::new("/proc"), btime);
             let our_uid = applier::our_euid();

@@ -21,11 +21,11 @@ poll_interval_ms = 1000
 match = "firefox"
 tier = "software"
 
-[rules.vnyan]
+[rules.avatar_app]
 # Pinned explicitly to the software tier: the game-detection heuristic flags
-# processes with Steam/DRI/DRM fingerprints, which VNyan falsely matches if it
-# is started from a Steam prefix.  Explicit rules always take precedence.
-match = "VNyan"   # comm is case-sensitive
+# processes with Steam/DRI/DRM fingerprints, which some tools falsely match
+# when started from a Steam prefix.  Explicit rules always take precedence.
+match = "AvatarTool"   # comm is case-sensitive
 tier = "software"
 # Optional per-rule overrides instead of `tier`:
 # nice = 0
@@ -38,7 +38,7 @@ tier = "software"
 match = "cs2"
 tier = "game"
 
-[rules.streamdeck]
+[rules.obs]
 match = "obs"
 tier = "streaming"
 

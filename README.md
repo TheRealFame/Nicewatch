@@ -128,7 +128,7 @@ nicewatch [--root-config PATH] [--local-config PATH] [--socket PATH]
 cargo test -p nicewatch-common -p nicewatch-daemon
 ```
 
-71 tests cover section parsing, rules/preset resolution, sync precedence
+74 tests cover section parsing, rules/preset resolution, sync precedence
 (newer-local wins, promote on settle, self-write mtime tolerance, EPERM
 fallback), CPU% accounting, and the IPC wire format.
 
@@ -156,6 +156,10 @@ fallback), CPU% accounting, and the IPC wire format.
   reclaim the group's inactive pages (to zram/swap) above the set value —
   useful to keep an idle desktop from hoarding RAM.  Set it above the app's
   live working set so active windows never thrash.
+- Read-only GPU health notice: if any AMD GPU is pinned to
+  `power_dpm_force_performance_level` = `low` (power-profiles-daemon or a
+  stray write), the daemon broadcasts a one-shot warning (GUI banner + log)
+  per "low" episode.  It never writes GPU state.
 
 ## Roadmap / gaps
 

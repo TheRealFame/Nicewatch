@@ -407,6 +407,24 @@ impl CgroupManager {
             self.prune_dir(&dir);
             self.prune_dir(&stray_dir);
         }
+
+        // Orphan dirs left by a crashed instance are not in `created_dirs`
+        // (the state file is wiped during crash recovery), so the loop above
+        // never visits them.  Re-adopt dirs that still hold pids so the next
+        // poll reconciles them, and prune ones that are already empty.
+        let Ok(entries) = std::fs::read_dir(&base) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = match name.to_str() {
+                Some(n) => n,
+                None => continue,
+            };
+            if !name.starts_with("nw-") || self.created_dirs.contains(&entry.path()) {
+                continue;
+            }
+            self.created_dirs.insert(entry.path());
+            self.prune_dir(&entry.path());
+        }
     }
 
     /// Move every enrolled pid back to its origin and remove managed dirs.
@@ -512,12 +530,40 @@ fn apply_limits(dir: &Path, limits: &CgroupLimits) -> Result<(), String> {
         write_cgroup_file(&dir.join("cpu.weight"), &w.to_string())?;
     }
     if let Some(high) = &limits.memory_high {
+        let high = high.trim();
+        if !cgroup_size_valid(high) {
+            return Err(format!(
+                "memory_high {high:?} is not a cgroup byte size (integer with optional K/M/G/T suffix, or \"max\")"
+            ));
+        }
         write_cgroup_file(&dir.join("memory.high"), high)?;
     }
     if let Some(max) = &limits.memory_max {
+        let max = max.trim();
+        if !cgroup_size_valid(max) {
+            return Err(format!(
+                "memory_max {max:?} is not a cgroup byte size (integer with optional K/M/G/T suffix, or \"max\")"
+            ));
+        }
         write_cgroup_file(&dir.join("memory.max"), max)?;
     }
     Ok(())
+}
+
+/// cgroup v2 byte-size strings are integer-only with an optional K/M/G/T
+/// suffix (powers of 1024); decimals like `1.5G` get EINVAL from the
+/// kernel.  `max` is a valid special value.  Validate before writing so a
+/// bad value in one rule cannot spam EINVAL warnings on every poll.
+fn cgroup_size_valid(s: &str) -> bool {
+    let t = s.trim();
+    if t == "max" {
+        return true;
+    }
+    let (digits, _) = match t.as_bytes().split_last() {
+        Some((b'k' | b'K' | b'm' | b'M' | b'g' | b'G' | b't' | b'T', rest)) => (rest, ()),
+        _ => (t.as_bytes(), ()),
+    };
+    !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
 }
 
 /// Resolve `/sys/fs/cgroup/<rel>` from a pid's `cgroup.procs`-style line
@@ -1006,6 +1052,38 @@ mod tests {
         // Must not panic or create anything.
         m.sync_pid(1, "x", Some(&lims));
         assert!(!m.is_capped(1));
+    }
+
+    #[test]
+    fn cgroup_size_valid_rejects_decimals_and_junk() {
+        for ok in ["1G", "1536M", "1000000000", "max", "1k", "4T", "0", "64K"] {
+            assert!(cgroup_size_valid(ok), "{ok} should be valid");
+        }
+        for bad in ["1.5G", "1,5G", "-1", "", "abc", "1.5", "1G2"] {
+            assert!(!cgroup_size_valid(bad), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
+    fn sweep_prunes_orphan_dirs_from_crashed_runs() {
+        let td = tempfile::tempdir().unwrap();
+        let base = td.path().to_path_buf();
+        let orphan = base.join("nw-orphan");
+        std::fs::create_dir_all(&orphan).unwrap();
+        let mut m = CgroupManager {
+            base: Some(base),
+            enrolled: HashMap::new(),
+            created_dirs: HashSet::new(),
+            warned: HashSet::new(),
+            controllers_reasserted: false,
+            state_path: None,
+        };
+        m.sweep_strays();
+        assert!(
+            !orphan.exists(),
+            "orphan dir not in created_dirs must be pruned"
+        );
+        assert!(!m.created_dirs.contains(&orphan));
     }
 
     fn quota_string(pct: Option<u32>) -> String {

@@ -522,7 +522,7 @@ mod tests {
             "vn".into(),
             Rule {
                 name: "vn".into(),
-                match_name: "VNyan.exe".into(),
+                match_name: "ExampleApp.exe".into(),
                 tier: Some(Tier::Software),
                 nice: Some(0),
                 ionice_class: Some(IoniceClass::BestEffort),
@@ -536,7 +536,7 @@ mod tests {
         back.fill_rule_names();
         assert_eq!(back, cfg);
         // The rules survive the round trip with all fields intact.
-        assert_eq!(back.rules["vn"].match_name, "VNyan.exe");
+        assert_eq!(back.rules["vn"].match_name, "ExampleApp.exe");
         assert_eq!(back.rules["vn"].ionice_priority, Some(6));
     }
 
@@ -583,8 +583,8 @@ mod tests {
 
     #[test]
     fn rule_from_preset_has_kebab_serialization() {
-        let r = Rule::from_preset("VNyan.exe", Tier::Streaming);
-        assert_eq!(r.match_name, "VNyan.exe");
+        let r = Rule::from_preset("ExampleApp.exe", Tier::Streaming);
+        assert_eq!(r.match_name, "ExampleApp.exe");
         assert_eq!(r.tier, Some(Tier::Streaming));
         assert_eq!(r.nice, Some(-10));
         let s = serde_json::to_string(&r).unwrap();
